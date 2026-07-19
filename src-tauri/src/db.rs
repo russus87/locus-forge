@@ -5,7 +5,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
 use crate::model::{
-    CasoIn, CasoRow, CategoriaCount, DbStats, FonteIn, LuogoIn, NormalizedCaso, PersonaIn,
+    CasoDettaglio, CasoEdit, CasoIn, CasoRow, CategoriaCount, DbStats, FonteIn, LuogoIn, MediaIn,
+    MediaRow, NormalizedCaso, PersonaIn, PersonaRow,
 };
 
 const SCHEMA_SQL: &str = r#"
@@ -30,6 +31,9 @@ CREATE TABLE IF NOT EXISTS caso (
     payload_hash  TEXT,
     fetched_at    TEXT,
     published_at  TEXT,
+    contenuto_html TEXT,
+    lingua        TEXT DEFAULT 'it',
+    paese         TEXT DEFAULT 'IT',
     UNIQUE(source, source_id)
 );
 
@@ -42,6 +46,17 @@ CREATE TABLE IF NOT EXISTS persona (
     wikipedia_url TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_persona_caso ON persona(caso_id);
+
+CREATE TABLE IF NOT EXISTS media (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    caso_id    INTEGER NOT NULL REFERENCES caso(id) ON DELETE CASCADE,
+    tipo       TEXT NOT NULL,
+    url        TEXT NOT NULL,
+    titolo     TEXT,
+    didascalia TEXT,
+    ordine     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_media_caso ON media(caso_id);
 
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
@@ -66,11 +81,31 @@ impl Db {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=15000;")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=15000; PRAGMA foreign_keys=ON;")?;
         conn.execute_batch(SCHEMA_SQL)?;
+        // Migrazione idempotente per DB creati prima dell'editor: aggiunge le
+        // colonne mancanti su `caso` (la tabella `media` la crea SCHEMA_SQL).
+        Self::ensure_column(&conn, "caso", "contenuto_html", "TEXT")?;
+        Self::ensure_column(&conn, "caso", "lingua", "TEXT DEFAULT 'it'")?;
+        Self::ensure_column(&conn, "caso", "paese", "TEXT DEFAULT 'IT'")?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// Aggiunge una colonna a una tabella se non esiste già (migrazione soft).
+    fn ensure_column(conn: &Connection, table: &str, col: &str, decl: &str) -> anyhow::Result<()> {
+        let present: Option<i64> = conn
+            .query_row(
+                "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
+                params![table, col],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if present.is_none() {
+            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {decl};"))?;
+        }
+        Ok(())
     }
 
     /// Valore di configurazione persistente (tabella `settings`), se presente.
@@ -227,12 +262,135 @@ impl Db {
         })
     }
 
+    /// Scheda completa di un caso per l'editor (campi + media + persone).
+    pub fn get_caso(&self, id: i64) -> anyhow::Result<Option<CasoDettaglio>> {
+        let conn = self.conn.lock().unwrap();
+        let base: Option<CasoDettaglio> = conn
+            .query_row(
+                "SELECT id, titolo, sommario, descrizione, contenuto_html, categoria, anno, \
+                 wikipedia_url, immagine_url, luogo_nome, lat, lon, published_at \
+                 FROM caso WHERE id = ?1",
+                params![id],
+                |r| {
+                    let published_at: Option<String> = r.get(12)?;
+                    Ok(CasoDettaglio {
+                        id: r.get(0)?,
+                        titolo: r.get(1)?,
+                        sommario: r.get(2)?,
+                        descrizione: r.get(3)?,
+                        contenuto_html: r.get(4)?,
+                        categoria: r.get(5)?,
+                        anno: r.get(6)?,
+                        wikipedia_url: r.get(7)?,
+                        immagine_url: r.get(8)?,
+                        luogo_nome: r.get(9)?,
+                        lat: r.get(10)?,
+                        lon: r.get(11)?,
+                        published: published_at.is_some(),
+                        media: Vec::new(),
+                        persone: Vec::new(),
+                    })
+                },
+            )
+            .optional()?;
+
+        let mut caso = match base {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+
+        let mut mstmt = conn.prepare(
+            "SELECT tipo, url, titolo, didascalia, ordine FROM media \
+             WHERE caso_id = ?1 ORDER BY ordine ASC, id ASC",
+        )?;
+        caso.media = mstmt
+            .query_map(params![id], |r| {
+                Ok(MediaRow {
+                    tipo: r.get(0)?,
+                    url: r.get(1)?,
+                    titolo: r.get(2)?,
+                    didascalia: r.get(3)?,
+                    ordine: r.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut pstmt =
+            conn.prepare("SELECT nome, ruolo FROM persona WHERE caso_id = ?1 ORDER BY id ASC")?;
+        caso.persone = pstmt
+            .query_map(params![id], |r| {
+                Ok(PersonaRow {
+                    nome: r.get(0)?,
+                    ruolo: r.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Some(caso))
+    }
+
+    /// Salva le modifiche dell'editor su un caso. Rimette il caso come "da
+    /// pubblicare" (published_at = NULL) e sostituisce i media in blocco.
+    pub fn update_caso(&self, id: i64, edit: &CasoEdit) -> anyhow::Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let contenuto = edit
+            .contenuto_html
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        tx.execute(
+            "UPDATE caso SET titolo=?1, sommario=?2, categoria=?3, anno=?4, \
+             contenuto_html=?5, published_at=NULL WHERE id=?6",
+            params![
+                edit.titolo.trim(),
+                edit.sommario.as_deref().map(str::trim),
+                edit.categoria.trim(),
+                edit.anno,
+                contenuto,
+                id
+            ],
+        )?;
+        tx.execute("DELETE FROM media WHERE caso_id = ?1", params![id])?;
+        for (i, m) in edit.media.iter().enumerate() {
+            if m.url.trim().is_empty() {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO media (caso_id, tipo, url, titolo, didascalia, ordine) \
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                params![
+                    id,
+                    m.tipo.trim(),
+                    m.url.trim(),
+                    m.titolo.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+                    m.didascalia.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+                    i as i64
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Torna al testo originale: azzera il contenuto curato (l'app mostrerà la
+    /// descrizione del crawler). Rimette il caso come "da pubblicare".
+    pub fn revert_original(&self, id: i64) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE caso SET contenuto_html=NULL, published_at=NULL WHERE id=?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
     /// Casi non ancora pubblicati, come coppie (id, DTO pronto per il backend).
     pub fn casi_pending_publish(&self) -> anyhow::Result<Vec<(i64, CasoIn)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, titolo, categoria, sommario, descrizione, anno, data_evento, \
-             wikidata_qid, wikipedia_url, immagine_url, lat, lon, luogo_nome \
+             wikidata_qid, wikipedia_url, immagine_url, lat, lon, luogo_nome, \
+             contenuto_html, lingua, paese \
              FROM caso WHERE published_at IS NULL ORDER BY id ASC",
         )?;
         let mut rows = stmt
@@ -265,6 +423,9 @@ impl Db {
                     categoria: r.get(2)?,
                     sommario: r.get(3)?,
                     descrizione: r.get(4)?,
+                    contenuto_html: r.get(13)?,
+                    lingua: r.get(14)?,
+                    paese: r.get(15)?,
                     anno: r.get(5)?,
                     data_evento: r.get(6)?,
                     wikidata_qid: r.get(7)?,
@@ -274,6 +435,7 @@ impl Db {
                     luogo,
                     persone: Vec::new(),
                     fonti,
+                    media: Vec::new(),
                 };
                 Ok((id, caso))
             })?
@@ -295,6 +457,26 @@ impl Db {
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             caso.persone = persone;
+        }
+
+        // Aggancia i media (embed) curati a ciascun caso.
+        let mut mstmt = conn.prepare(
+            "SELECT tipo, url, titolo, didascalia, ordine FROM media \
+             WHERE caso_id = ?1 ORDER BY ordine ASC, id ASC",
+        )?;
+        for (id, caso) in rows.iter_mut() {
+            let media = mstmt
+                .query_map(params![*id], |r| {
+                    Ok(MediaIn {
+                        tipo: r.get(0)?,
+                        url: r.get(1)?,
+                        titolo: r.get(2)?,
+                        didascalia: r.get(3)?,
+                        ordine: r.get(4)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            caso.media = media;
         }
         Ok(rows)
     }

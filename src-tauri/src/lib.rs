@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
 
 use error::{AppError, AppResult};
-use model::{CasoRow, DbStats, SourceInfo};
+use model::{CasoDettaglio, CasoEdit, CasoRow, DbStats, SourceInfo};
 use sources::wikidata::WikidataSource;
 use state::{AppState, CrawlStatus, PublishStatus};
 
@@ -107,6 +107,23 @@ fn list_casi(state: State<AppState>, query: Option<String>) -> AppResult<Vec<Cas
 #[tauri::command]
 fn db_stats(state: State<AppState>) -> AppResult<DbStats> {
     Ok(state.db.stats()?)
+}
+
+#[tauri::command]
+fn get_caso(state: State<AppState>, id: i64) -> AppResult<Option<CasoDettaglio>> {
+    Ok(state.db.get_caso(id)?)
+}
+
+#[tauri::command]
+fn update_caso(state: State<AppState>, id: i64, edit: CasoEdit) -> AppResult<()> {
+    state.db.update_caso(id, &edit)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn revert_original(state: State<AppState>, id: i64) -> AppResult<()> {
+    state.db.revert_original(id)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -271,6 +288,9 @@ pub fn run() {
             stop_task,
             list_casi,
             db_stats,
+            get_caso,
+            update_caso,
+            revert_original,
             start_crawl,
             publish_batch,
             reset_published,

@@ -57,3 +57,50 @@ export interface Settings {
   backend_url: string;
   ingest_key: string;
 }
+
+export interface MediaRow {
+  tipo: string;
+  url: string;
+  titolo: string | null;
+  didascalia: string | null;
+  ordine: number;
+}
+
+export interface PersonaRow {
+  nome: string;
+  ruolo: string;
+}
+
+export interface CasoDettaglio {
+  id: number;
+  titolo: string;
+  sommario: string | null;
+  descrizione: string | null;   // testo originale del crawler
+  contenutoHtml: string | null; // contenuto curato
+  categoria: string;
+  anno: number | null;
+  wikipediaUrl: string | null;
+  immagineUrl: string | null;
+  luogoNome: string | null;
+  lat: number | null;
+  lon: number | null;
+  published: boolean;
+  media: MediaRow[];
+  persone: PersonaRow[];
+}
+
+export interface MediaEdit {
+  tipo: string;
+  url: string;
+  titolo: string | null;
+  didascalia: string | null;
+}
+
+export interface CasoEdit {
+  titolo: string;
+  sommario: string | null;
+  categoria: string;
+  anno: number | null;
+  contenutoHtml: string | null;
+  media: MediaEdit[];
+}

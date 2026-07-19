@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { CasoRow, CrawlStatus, DbStats, PublishStatus, Settings, SourceInfo } from "./types";
+import type { CasoDettaglio, CasoEdit, CasoRow, CrawlStatus, DbStats, PublishStatus, Settings, SourceInfo } from "./types";
 
 /// Wrapper sottile 1:1 sui comandi Tauri (invoke) e sugli eventi (listen).
 export const api = {
@@ -19,6 +19,10 @@ export const api = {
 
   listCasi: (query: string) => invoke<CasoRow[]>("list_casi", { query }),
   dbStats: () => invoke<DbStats>("db_stats"),
+
+  getCaso: (id: number) => invoke<CasoDettaglio | null>("get_caso", { id }),
+  updateCaso: (id: number, edit: CasoEdit) => invoke<void>("update_caso", { id, edit }),
+  revertOriginal: (id: number) => invoke<void>("revert_original", { id }),
 
   publishBatch: () => invoke<void>("publish_batch"),
   resetPublished: () => invoke<number>("reset_published"),

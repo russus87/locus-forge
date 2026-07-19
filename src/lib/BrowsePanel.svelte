@@ -2,10 +2,12 @@
   import { onMount } from "svelte";
   import { api, categoriaMeta } from "./api";
   import type { CasoRow } from "./types";
+  import CaseEditor from "./CaseEditor.svelte";
 
   let query = $state("");
   let casi = $state<CasoRow[]>([]);
   let loading = $state(false);
+  let editId = $state<number | null>(null);
 
   async function load() {
     loading = true;
@@ -16,8 +18,17 @@
     }
   }
 
+  function onEditorClose() {
+    editId = null;
+    load(); // rinfresca stato pubblicato/da-pubblicare
+  }
+
   onMount(load);
 </script>
+
+{#if editId !== null}
+  <CaseEditor id={editId} onClose={onEditorClose} />
+{:else}
 
 <div class="card">
   <div class="head">
@@ -37,6 +48,7 @@
       {#each casi as c}
         {@const m = categoriaMeta(c.categoria)}
         <li>
+          <button class="rowbtn" onclick={() => (editId = c.id)}>
           <span class="dot" style="background:{m.color}"></span>
           <div class="info">
             <div class="title-row">
@@ -53,11 +65,13 @@
               <span class="pending">locale</span>
             {/if}
           </div>
+          </button>
         </li>
       {/each}
     </ul>
   {/if}
 </div>
+{/if}
 
 <style>
   .head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -66,7 +80,9 @@
   .search input { width: 240px; }
   .muted { color: var(--ink-muted); }
   .list { list-style: none; margin: 0; padding: 0; }
-  li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  li { border-top: 1px solid var(--line); }
+  .rowbtn { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 10px; margin: 0 -10px; background: transparent; border: none; cursor: pointer; border-radius: 8px; color: inherit; font: inherit; }
+  .rowbtn:hover { background: var(--surface-hi); }
   .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
   .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .title-row { display: flex; align-items: baseline; gap: 10px; }

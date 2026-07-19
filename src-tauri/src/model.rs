@@ -46,6 +46,70 @@ pub struct CasoRow {
     pub published: bool,
 }
 
+/// Media curato di un caso, verso la UI dell'editor.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaRow {
+    pub tipo: String,
+    pub url: String,
+    pub titolo: Option<String>,
+    pub didascalia: Option<String>,
+    pub ordine: i64,
+}
+
+/// Persona di un caso, verso la UI (sola lettura nell'editor v1).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonaRow {
+    pub nome: String,
+    pub ruolo: String,
+}
+
+/// Scheda completa di un caso per l'editor del Forge.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CasoDettaglio {
+    pub id: i64,
+    pub titolo: String,
+    pub sommario: Option<String>,
+    /// Testo ORIGINALE dal crawler (immutabile lato editor).
+    pub descrizione: Option<String>,
+    /// Contenuto CURATO (HTML) — ciò che si edita e pubblica.
+    pub contenuto_html: Option<String>,
+    pub categoria: String,
+    pub anno: Option<i64>,
+    pub wikipedia_url: Option<String>,
+    pub immagine_url: Option<String>,
+    pub luogo_nome: Option<String>,
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+    pub published: bool,
+    pub media: Vec<MediaRow>,
+    pub persone: Vec<PersonaRow>,
+}
+
+/// Un media in ingresso dall'editor (senza id/ordine: l'ordine è quello di lista).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaEdit {
+    pub tipo: String,
+    pub url: String,
+    pub titolo: Option<String>,
+    pub didascalia: Option<String>,
+}
+
+/// Modifiche salvate dall'editor su un caso.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CasoEdit {
+    pub titolo: String,
+    pub sommario: Option<String>,
+    pub categoria: String,
+    pub anno: Option<i64>,
+    pub contenuto_html: Option<String>,
+    pub media: Vec<MediaEdit>,
+}
+
 /// Conteggio per categoria (per il pannello statistiche).
 #[derive(Debug, Clone, Serialize)]
 pub struct CategoriaCount {
@@ -107,6 +171,18 @@ pub struct FonteIn {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MediaIn {
+    pub tipo: String,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub titolo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub didascalia: Option<String>,
+    pub ordine: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CasoIn {
     pub titolo: String,
     pub categoria: String,
@@ -114,6 +190,12 @@ pub struct CasoIn {
     pub sommario: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub descrizione: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contenuto_html: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lingua: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paese: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anno: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,4 +212,5 @@ pub struct CasoIn {
     pub luogo: Option<LuogoIn>,
     pub persone: Vec<PersonaIn>,
     pub fonti: Vec<FonteIn>,
+    pub media: Vec<MediaIn>,
 }
