@@ -42,6 +42,14 @@ CREATE TABLE IF NOT EXISTS persona (
     caso_id       INTEGER NOT NULL REFERENCES caso(id) ON DELETE CASCADE,
     nome          TEXT NOT NULL,
     ruolo         TEXT NOT NULL,
+    descrizione   TEXT,
+    biografia     TEXT,
+    immagine_url  TEXT,
+    data_nascita  TEXT,
+    data_morte    TEXT,
+    luogo_nascita TEXT,
+    occupazione   TEXT,
+    nazionalita   TEXT,
     wikidata_qid  TEXT,
     wikipedia_url TEXT
 );
@@ -88,6 +96,12 @@ impl Db {
         Self::ensure_column(&conn, "caso", "contenuto_html", "TEXT")?;
         Self::ensure_column(&conn, "caso", "lingua", "TEXT DEFAULT 'it'")?;
         Self::ensure_column(&conn, "caso", "paese", "TEXT DEFAULT 'IT'")?;
+        for col in [
+            "descrizione", "biografia", "immagine_url", "data_nascita", "data_morte",
+            "luogo_nascita", "occupazione", "nazionalita",
+        ] {
+            Self::ensure_column(&conn, "persona", col, "TEXT")?;
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -190,9 +204,15 @@ impl Db {
         conn.execute("DELETE FROM persona WHERE caso_id = ?1", params![caso_id])?;
         for p in &n.persone {
             conn.execute(
-                "INSERT INTO persona (caso_id, nome, ruolo, wikidata_qid, wikipedia_url) \
-                 VALUES (?1,?2,?3,?4,?5)",
-                params![caso_id, p.nome, p.ruolo, p.wikidata_qid, p.wikipedia_url],
+                "INSERT INTO persona (caso_id, nome, ruolo, descrizione, biografia, \
+                 immagine_url, data_nascita, data_morte, luogo_nascita, occupazione, \
+                 nazionalita, wikidata_qid, wikipedia_url) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                params![
+                    caso_id, p.nome, p.ruolo, p.descrizione, p.biografia, p.immagine_url,
+                    p.data_nascita, p.data_morte, p.luogo_nascita, p.occupazione,
+                    p.nazionalita, p.wikidata_qid, p.wikipedia_url
+                ],
             )?;
         }
 
@@ -315,13 +335,26 @@ impl Db {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut pstmt =
-            conn.prepare("SELECT nome, ruolo FROM persona WHERE caso_id = ?1 ORDER BY id ASC")?;
+        let mut pstmt = conn.prepare(
+            "SELECT nome, ruolo, descrizione, biografia, immagine_url, data_nascita, \
+             data_morte, luogo_nascita, occupazione, nazionalita, wikidata_qid, wikipedia_url \
+             FROM persona WHERE caso_id = ?1 ORDER BY id ASC",
+        )?;
         caso.persone = pstmt
             .query_map(params![id], |r| {
                 Ok(PersonaRow {
                     nome: r.get(0)?,
                     ruolo: r.get(1)?,
+                    descrizione: r.get(2)?,
+                    biografia: r.get(3)?,
+                    immagine_url: r.get(4)?,
+                    data_nascita: r.get(5)?,
+                    data_morte: r.get(6)?,
+                    luogo_nascita: r.get(7)?,
+                    occupazione: r.get(8)?,
+                    nazionalita: r.get(9)?,
+                    wikidata_qid: r.get(10)?,
+                    wikipedia_url: r.get(11)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -366,6 +399,37 @@ impl Db {
                     m.titolo.as_deref().map(str::trim).filter(|s| !s.is_empty()),
                     m.didascalia.as_deref().map(str::trim).filter(|s| !s.is_empty()),
                     i as i64
+                ],
+            )?;
+        }
+        // Sostituzione delle persone curate.
+        tx.execute("DELETE FROM persona WHERE caso_id = ?1", params![id])?;
+        for p in &edit.persone {
+            if p.nome.trim().is_empty() {
+                continue;
+            }
+            let clean = |o: &Option<String>| {
+                o.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
+            };
+            tx.execute(
+                "INSERT INTO persona (caso_id, nome, ruolo, descrizione, biografia, \
+                 immagine_url, data_nascita, data_morte, luogo_nascita, occupazione, \
+                 nazionalita, wikidata_qid, wikipedia_url) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                params![
+                    id,
+                    p.nome.trim(),
+                    p.ruolo.trim(),
+                    clean(&p.descrizione),
+                    clean(&p.biografia),
+                    clean(&p.immagine_url),
+                    clean(&p.data_nascita),
+                    clean(&p.data_morte),
+                    clean(&p.luogo_nascita),
+                    clean(&p.occupazione),
+                    clean(&p.nazionalita),
+                    clean(&p.wikidata_qid),
+                    clean(&p.wikipedia_url)
                 ],
             )?;
         }
@@ -443,7 +507,9 @@ impl Db {
 
         // Aggancia le persone (vittime/colpevoli) a ciascun caso.
         let mut pstmt = conn.prepare(
-            "SELECT nome, ruolo, wikidata_qid, wikipedia_url FROM persona WHERE caso_id = ?1",
+            "SELECT nome, ruolo, descrizione, biografia, immagine_url, data_nascita, \
+             data_morte, luogo_nascita, occupazione, nazionalita, wikidata_qid, wikipedia_url \
+             FROM persona WHERE caso_id = ?1 ORDER BY id ASC",
         )?;
         for (id, caso) in rows.iter_mut() {
             let persone = pstmt
@@ -451,8 +517,16 @@ impl Db {
                     Ok(PersonaIn {
                         nome: r.get(0)?,
                         ruolo: r.get(1)?,
-                        wikidata_qid: r.get(2)?,
-                        wikipedia_url: r.get(3)?,
+                        descrizione: r.get(2)?,
+                        biografia: r.get(3)?,
+                        immagine_url: r.get(4)?,
+                        data_nascita: r.get(5)?,
+                        data_morte: r.get(6)?,
+                        luogo_nascita: r.get(7)?,
+                        occupazione: r.get(8)?,
+                        nazionalita: r.get(9)?,
+                        wikidata_qid: r.get(10)?,
+                        wikipedia_url: r.get(11)?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;

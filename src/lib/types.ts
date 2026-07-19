@@ -69,6 +69,31 @@ export interface MediaRow {
 export interface PersonaRow {
   nome: string;
   ruolo: string;
+  descrizione: string | null;
+  biografia: string | null;
+  immagineUrl: string | null;
+  dataNascita: string | null;
+  dataMorte: string | null;
+  luogoNascita: string | null;
+  occupazione: string | null;
+  nazionalita: string | null;
+  wikidataQid: string | null;
+  wikipediaUrl: string | null;
+}
+
+export interface PersonaEdit {
+  nome: string;
+  ruolo: string;
+  descrizione: string | null;
+  biografia: string | null;
+  immagineUrl: string | null;
+  dataNascita: string | null;
+  dataMorte: string | null;
+  luogoNascita: string | null;
+  occupazione: string | null;
+  nazionalita: string | null;
+  wikidataQid: string | null;
+  wikipediaUrl: string | null;
 }
 
 export interface CasoDettaglio {
@@ -103,4 +128,5 @@ export interface CasoEdit {
   anno: number | null;
   contenutoHtml: string | null;
   media: MediaEdit[];
+  persone: PersonaEdit[];
 }

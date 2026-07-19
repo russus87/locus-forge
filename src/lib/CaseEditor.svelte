@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, CATEGORIE } from "./api";
-  import type { CasoDettaglio, MediaEdit } from "./types";
+  import type { CasoDettaglio, MediaEdit, PersonaEdit } from "./types";
 
   let { id, onClose }: { id: number; onClose: (changed: boolean) => void } = $props();
 
@@ -17,6 +17,9 @@
   let categoria = $state("OMICIDIO");
   let anno = $state<number | null>(null);
   let media = $state<MediaEdit[]>([]);
+  let persone = $state<PersonaEdit[]>([]);
+
+  const RUOLI = ["VITTIMA", "COLPEVOLE", "CONDANNATO", "SOSPETTATO", "INDAGATO", "INVESTIGATORE", "ALTRO"];
 
   // Editor HTML
   let editorEl: HTMLDivElement | undefined = $state();
@@ -41,6 +44,12 @@
         categoria = caso.categoria;
         anno = caso.anno;
         media = caso.media.map((m) => ({ tipo: m.tipo, url: m.url, titolo: m.titolo, didascalia: m.didascalia }));
+        persone = caso.persone.map((p) => ({
+          nome: p.nome, ruolo: p.ruolo, descrizione: p.descrizione, biografia: p.biografia,
+          immagineUrl: p.immagineUrl, dataNascita: p.dataNascita, dataMorte: p.dataMorte,
+          luogoNascita: p.luogoNascita, occupazione: p.occupazione, nazionalita: p.nazionalita,
+          wikidataQid: p.wikidataQid, wikipediaUrl: p.wikipediaUrl,
+        }));
         if (editorEl) editorEl.innerHTML = caso.contenutoHtml ?? "";
       }
     } catch (e) {
@@ -104,6 +113,18 @@
     media = copy;
   }
 
+  // ---- persone ----
+  function addPersona() {
+    persone = [...persone, {
+      nome: "", ruolo: "VITTIMA", descrizione: null, biografia: null, immagineUrl: null,
+      dataNascita: null, dataMorte: null, luogoNascita: null, occupazione: null,
+      nazionalita: null, wikidataQid: null, wikipediaUrl: null,
+    }];
+  }
+  function removePersona(i: number) {
+    persone = persone.filter((_, j) => j !== i);
+  }
+
   async function save() {
     saving = true;
     error = null;
@@ -117,6 +138,7 @@
         anno,
         contenutoHtml: contenutoHtml || null,
         media: media.filter((m) => m.url.trim()),
+        persone: persone.filter((p) => p.nome.trim()),
       });
       savedMsg = "Salvato. Il caso è ora «da pubblicare».";
       caso = await api.getCaso(id);
@@ -220,6 +242,42 @@
             </div>
           {/each}
         </div>
+
+        <div class="media">
+          <div class="media-head">
+            <div class="lbl">Persone (schede)</div>
+            <button class="ghost small" onclick={addPersona}>+ Aggiungi persona</button>
+          </div>
+          {#if persone.length === 0}
+            <p class="muted small">Nessuna persona. Il crawler popola vittime e colpevoli; qui puoi correggerle o aggiungerne.</p>
+          {/if}
+          {#each persone as p, i}
+            <div class="persona">
+              <div class="prow">
+                {#if p.immagineUrl}
+                  <img class="pfoto" src={p.immagineUrl} alt={p.nome} />
+                {:else}
+                  <div class="pfoto ph">👤</div>
+                {/if}
+                <input class="pnome" placeholder="Nome" bind:value={p.nome} />
+                <select class="pruolo" bind:value={p.ruolo}>
+                  {#each RUOLI as r}<option value={r}>{r.charAt(0) + r.slice(1).toLowerCase()}</option>{/each}
+                </select>
+                <button class="ghost tiny danger" onclick={() => removePersona(i)}>✕</button>
+              </div>
+              <div class="pgrid">
+                <input placeholder="Nascita (AAAA-MM-GG)" bind:value={p.dataNascita} />
+                <input placeholder="Morte (AAAA-MM-GG)" bind:value={p.dataMorte} />
+                <input placeholder="Luogo di nascita" bind:value={p.luogoNascita} />
+                <input placeholder="Occupazione" bind:value={p.occupazione} />
+                <input placeholder="Nazionalità" bind:value={p.nazionalita} />
+                <input placeholder="Foto (URL)" bind:value={p.immagineUrl} />
+              </div>
+              <input class="pfull" placeholder="Descrizione breve (una riga)" bind:value={p.descrizione} />
+              <textarea class="pfull" rows="3" placeholder="Biografia" bind:value={p.biografia}></textarea>
+            </div>
+          {/each}
+        </div>
       </div>
 
       <div class="col side">
@@ -233,13 +291,6 @@
         <div class="status">
           {#if caso.published}<span class="pub">● pubblicato</span>{:else}<span class="pend">● da pubblicare</span>{/if}
         </div>
-
-        {#if caso.persone.length}
-          <div class="side-block">
-            <div class="lbl">Persone</div>
-            <ul>{#each caso.persone as p}<li>{p.nome} <span class="ruolo">· {p.ruolo}</span></li>{/each}</ul>
-          </div>
-        {/if}
 
         {#if caso.descrizione}
           <div class="side-block">
@@ -299,10 +350,16 @@
   .status { margin: 4px 0 14px; }
   .pub { color: var(--ok); font-size: 12px; font-weight: 700; }
   .pend { color: var(--ink-faint); font-size: 12px; font-weight: 700; }
+  .persona { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 10px 0; background: var(--surface-hi); }
+  .prow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .pfoto { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; flex: none; background: var(--surface); }
+  .pfoto.ph { display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .pnome { flex: 1; font-weight: 600; }
+  .pruolo { width: 150px; flex: none; }
+  .pgrid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+  .pgrid input { font-size: 13px; padding: 7px 9px; }
+  .pfull { margin-top: 6px; font-size: 13px; }
   .side-block { margin-top: 18px; }
-  .side-block ul { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-  .side-block li { padding: 3px 0; }
-  .ruolo { color: var(--ink-faint); }
   .orig { font-size: 12px; color: var(--ink-muted); line-height: 1.5; max-height: 220px; overflow: auto; white-space: pre-wrap; }
   .muted { color: var(--ink-muted); }
   .warn { color: #e8907f; font-size: 13px; margin-top: 12px; }

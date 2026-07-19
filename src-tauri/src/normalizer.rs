@@ -32,13 +32,23 @@ pub fn normalize(item: &RawItem) -> anyhow::Result<NormalizedCaso> {
                     if nome.is_empty() {
                         return None;
                     }
+                    let ps = |k: &str| p.get(k).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string);
                     let ruolo = p.get("ruolo").and_then(Value::as_str).unwrap_or("ALTRO").to_string();
-                    let qid = p.get("qid").and_then(Value::as_str).map(|s| s.to_string());
+                    let biografia = ps("biografia");
+                    let descrizione = ps("descrizione").or_else(|| biografia.as_deref().map(prima_frase));
                     Some(NormPersona {
                         nome,
                         ruolo,
-                        wikidata_qid: qid,
-                        wikipedia_url: None,
+                        descrizione,
+                        biografia,
+                        immagine_url: ps("image"),
+                        data_nascita: ps("dataNascita").as_deref().and_then(parse_iso_date),
+                        data_morte: ps("dataMorte").as_deref().and_then(parse_iso_date),
+                        luogo_nascita: ps("luogoNascita"),
+                        occupazione: ps("occupazione"),
+                        nazionalita: ps("nazionalita"),
+                        wikidata_qid: ps("qid"),
+                        wikipedia_url: ps("article"),
                     })
                 })
                 .collect()

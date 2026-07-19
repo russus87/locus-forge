@@ -5,6 +5,14 @@ use serde::{Deserialize, Serialize};
 pub struct NormPersona {
     pub nome: String,
     pub ruolo: String,
+    pub descrizione: Option<String>,
+    pub biografia: Option<String>,
+    pub immagine_url: Option<String>,
+    pub data_nascita: Option<String>,
+    pub data_morte: Option<String>,
+    pub luogo_nascita: Option<String>,
+    pub occupazione: Option<String>,
+    pub nazionalita: Option<String>,
     pub wikidata_qid: Option<String>,
     pub wikipedia_url: Option<String>,
 }
@@ -57,12 +65,40 @@ pub struct MediaRow {
     pub ordine: i64,
 }
 
-/// Persona di un caso, verso la UI (sola lettura nell'editor v1).
+/// Persona di un caso, scheda completa verso la UI dell'editor.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonaRow {
     pub nome: String,
     pub ruolo: String,
+    pub descrizione: Option<String>,
+    pub biografia: Option<String>,
+    pub immagine_url: Option<String>,
+    pub data_nascita: Option<String>,
+    pub data_morte: Option<String>,
+    pub luogo_nascita: Option<String>,
+    pub occupazione: Option<String>,
+    pub nazionalita: Option<String>,
+    pub wikidata_qid: Option<String>,
+    pub wikipedia_url: Option<String>,
+}
+
+/// Persona in ingresso dall'editor.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonaEdit {
+    pub nome: String,
+    pub ruolo: String,
+    pub descrizione: Option<String>,
+    pub biografia: Option<String>,
+    pub immagine_url: Option<String>,
+    pub data_nascita: Option<String>,
+    pub data_morte: Option<String>,
+    pub luogo_nascita: Option<String>,
+    pub occupazione: Option<String>,
+    pub nazionalita: Option<String>,
+    pub wikidata_qid: Option<String>,
+    pub wikipedia_url: Option<String>,
 }
 
 /// Scheda completa di un caso per l'editor del Forge.
@@ -108,6 +144,7 @@ pub struct CasoEdit {
     pub anno: Option<i64>,
     pub contenuto_html: Option<String>,
     pub media: Vec<MediaEdit>,
+    pub persone: Vec<PersonaEdit>,
 }
 
 /// Conteggio per categoria (per il pannello statistiche).
@@ -152,6 +189,22 @@ pub struct LuogoIn {
 pub struct PersonaIn {
     pub nome: String,
     pub ruolo: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub descrizione: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub biografia: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub immagine_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_nascita: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_morte: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub luogo_nascita: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub occupazione: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nazionalita: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wikidata_qid: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

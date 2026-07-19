@@ -20,6 +20,18 @@ struct SparqlRow {
     article_url: Option<String>,
 }
 
+/// Dettagli biografici di una persona (Wikidata), per la scheda personaggio.
+#[derive(Debug, Clone, Default)]
+struct PersonDetail {
+    image: Option<String>,
+    dob: Option<String>,
+    dod: Option<String>,
+    luogo_nascita: Option<String>,
+    nazionalita: Option<String>,
+    occupazione: Option<String>,
+    article: Option<String>,
+}
+
 /// Sorgente Wikidata (SPARQL) con arricchimento dalla Wikipedia in italiano.
 pub struct WikidataSource {
     http: reqwest::Client,
@@ -191,12 +203,33 @@ LIMIT {limit}"#
         }
 
         let (persone_raw, luogo) = self.fetch_enrichment(qid).await;
-        let persone: Vec<Value> = persone_raw
-            .into_iter()
-            .map(|(nome, pqid, ruolo)| {
-                serde_json::json!({ "nome": nome, "ruolo": ruolo, "qid": pqid })
-            })
+        let pqids: Vec<String> = persone_raw
+            .iter()
+            .map(|(_, q, _)| q.clone())
+            .filter(|q| !q.is_empty())
             .collect();
+        let dettagli = self.fetch_persone_dettagli(&pqids).await;
+        let mut persone: Vec<Value> = Vec::with_capacity(persone_raw.len());
+        for (nome, pqid, ruolo) in persone_raw {
+            let d = dettagli.get(&pqid).cloned().unwrap_or_default();
+            let biografia = match &d.article {
+                Some(a) => self.fetch_bio(a).await,
+                None => None,
+            };
+            persone.push(serde_json::json!({
+                "nome": nome,
+                "ruolo": ruolo,
+                "qid": pqid,
+                "image": d.image,
+                "dataNascita": d.dob,
+                "dataMorte": d.dod,
+                "luogoNascita": d.luogo_nascita,
+                "nazionalita": d.nazionalita,
+                "occupazione": d.occupazione,
+                "article": d.article,
+                "biografia": biografia,
+            }));
+        }
 
         let raw_json = serde_json::json!({
             "qid": qid,
@@ -287,6 +320,121 @@ LIMIT {limit}"#
             }
         }
         (persone, luogo)
+    }
+
+    /// Dettagli biografici per un gruppo di QID persona (una sola SPARQL):
+    /// foto (P18), nascita/morte (P569/P570), luogo di nascita (P19),
+    /// nazionalità (P27), occupazioni (P106) e l'articolo Wikipedia italiano.
+    async fn fetch_persone_dettagli(&self, qids: &[String]) -> HashMap<String, PersonDetail> {
+        if qids.is_empty() {
+            return HashMap::new();
+        }
+        let values = qids
+            .iter()
+            .map(|q| format!("wd:{q}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let query = format!(
+            r#"SELECT ?e ?img ?dob ?dod ?nascitaLabel ?natLabel ?occLabel ?article WHERE {{
+  VALUES ?e {{ {values} }}
+  OPTIONAL {{ ?e wdt:P18 ?img. }}
+  OPTIONAL {{ ?e wdt:P569 ?dob. }}
+  OPTIONAL {{ ?e wdt:P570 ?dod. }}
+  OPTIONAL {{ ?e wdt:P19 ?nascita. }}
+  OPTIONAL {{ ?e wdt:P27 ?nat. }}
+  OPTIONAL {{ ?e wdt:P106 ?occ. }}
+  OPTIONAL {{ ?article schema:about ?e ; schema:isPartOf <https://it.wikipedia.org/> . }}
+  SERVICE wikibase:label {{ bd:serviceParam wikibase:language "it,en".
+    ?nascita rdfs:label ?nascitaLabel. ?nat rdfs:label ?natLabel. ?occ rdfs:label ?occLabel. }}
+}}"#
+        );
+        let json = match self
+            .get_json_retry(SPARQL_ENDPOINT, &[("query", query.as_str()), ("format", "json")], true)
+            .await
+        {
+            Ok(j) => j,
+            Err(_) => return HashMap::new(),
+        };
+        let bindings = json
+            .get("results")
+            .and_then(|r| r.get("bindings"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let field = |b: &Value, k: &str| {
+            b.get(k)
+                .and_then(|v| v.get("value"))
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        };
+
+        let mut out: HashMap<String, PersonDetail> = HashMap::new();
+        for b in &bindings {
+            let e = match field(b, "e") {
+                Some(u) => u.rsplit('/').next().unwrap_or("").to_string(),
+                None => continue,
+            };
+            if e.is_empty() {
+                continue;
+            }
+            let d = out.entry(e).or_default();
+            if d.image.is_none() {
+                d.image = field(b, "img");
+            }
+            if d.dob.is_none() {
+                d.dob = field(b, "dob");
+            }
+            if d.dod.is_none() {
+                d.dod = field(b, "dod");
+            }
+            if d.luogo_nascita.is_none() {
+                d.luogo_nascita = field(b, "nascitaLabel");
+            }
+            if d.nazionalita.is_none() {
+                d.nazionalita = field(b, "natLabel");
+            }
+            if d.article.is_none() {
+                d.article = field(b, "article");
+            }
+            if let Some(occ) = field(b, "occLabel") {
+                // accumula occupazioni distinte, in una sola stringa "a, b, c"
+                let mut set: Vec<String> = d
+                    .occupazione
+                    .take()
+                    .map(|s| s.split(", ").map(str::to_string).collect())
+                    .unwrap_or_default();
+                if !set.contains(&occ) {
+                    set.push(occ);
+                }
+                d.occupazione = Some(set.join(", "));
+            }
+        }
+        out
+    }
+
+    /// Estratto Wikipedia italiano (biografia) per una persona, dal suo articolo.
+    async fn fetch_bio(&self, article_url: &str) -> Option<String> {
+        let title = article_title(article_url)?;
+        let params = [
+            ("action", "query"),
+            ("format", "json"),
+            ("formatversion", "2"),
+            ("redirects", "1"),
+            ("prop", "extracts"),
+            ("exintro", "1"),
+            ("explaintext", "1"),
+            ("titles", title.as_str()),
+        ];
+        let json = self.get_json_retry(ITWIKI_API, &params, false).await.ok()?;
+        json.get("query")
+            .and_then(|q| q.get("pages"))
+            .and_then(Value::as_array)
+            .and_then(|a| a.first())
+            .and_then(|p| p.get("extract"))
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
     }
 
     /// GET con retry/backoff su 429 e 5xx (Wikidata SPARQL throttla facilmente).
