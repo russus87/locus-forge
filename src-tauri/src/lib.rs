@@ -201,6 +201,11 @@ async fn fetch_normalize_persist(
 }
 
 #[tauri::command]
+fn reset_published(state: State<AppState>) -> AppResult<usize> {
+    Ok(state.db.reset_all_published()?)
+}
+
+#[tauri::command]
 async fn publish_batch(app: tauri::AppHandle) -> AppResult<()> {
     {
         let state = app.state::<AppState>();
@@ -268,6 +273,7 @@ pub fn run() {
             db_stats,
             start_crawl,
             publish_batch,
+            reset_published,
         ])
         .run(tauri::generate_context!())
         .expect("errore nell'avvio dell'app Tauri");

@@ -21,6 +21,7 @@ export const api = {
   dbStats: () => invoke<DbStats>("db_stats"),
 
   publishBatch: () => invoke<void>("publish_batch"),
+  resetPublished: () => invoke<number>("reset_published"),
   publishStatus: () => invoke<PublishStatus>("publish_status"),
   onPublishProgress: (cb: (s: PublishStatus) => void) =>
     listen<PublishStatus>("publish-progress", (e) => cb(e.payload)),

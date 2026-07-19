@@ -311,4 +311,13 @@ impl Db {
         tx.commit()?;
         Ok(())
     }
+
+    /// Azzera il flag di pubblicazione di TUTTI i casi: li rende di nuovo "da
+    /// pubblicare". Serve per ri-inviare l'intero DB a un backend diverso.
+    /// Ritorna il numero di casi resettati.
+    pub fn reset_all_published(&self) -> anyhow::Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute("UPDATE caso SET published_at = NULL", [])?;
+        Ok(n)
+    }
 }
