@@ -1,11 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { CasoRow, CrawlStatus, DbStats, PublishStatus, SourceInfo } from "./types";
+import type { CasoRow, CrawlStatus, DbStats, PublishStatus, Settings, SourceInfo } from "./types";
 
 /// Wrapper sottile 1:1 sui comandi Tauri (invoke) e sugli eventi (listen).
 export const api = {
   listSources: () => invoke<SourceInfo[]>("list_sources"),
   backendTarget: () => invoke<string>("backend_target"),
+
+  getSettings: () => invoke<Settings>("get_settings"),
+  saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
 
   startCrawl: (source: string, limit: number) =>
     invoke<void>("start_crawl", { source, limit }),

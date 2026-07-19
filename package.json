@@ -1,6 +1,6 @@
 {
   "name": "locus-forge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Locus Forge — crawler e curation tool per il database di Locus Criminis",
   "type": "module",
   "scripts": {

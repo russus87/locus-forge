@@ -52,3 +52,8 @@ export interface SourceInfo {
   label: string;
   description: string;
 }
+
+export interface Settings {
+  backend_url: string;
+  ingest_key: string;
+}

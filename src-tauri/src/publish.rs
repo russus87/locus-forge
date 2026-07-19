@@ -10,6 +10,7 @@ const CHUNK: usize = 100;
 pub async fn publish_all(
     state: &AppState,
     backend_url: &str,
+    ingest_key: Option<String>,
     mut on_progress: impl FnMut(&PublishStatus),
 ) {
     let pending = match state.db.casi_pending_publish() {
@@ -46,8 +47,8 @@ pub async fn publish_all(
     }
 
     let url = format!("{}/api/ingest/casi/batch", backend_url.trim_end_matches('/'));
-    // Chiave opzionale per il backend di produzione (header X-Ingest-Key).
-    let ingest_key = std::env::var("LOCUS_INGEST_KEY").ok().filter(|k| !k.is_empty());
+    // Chiave opzionale per il backend di produzione (header X-Ingest-Key),
+    // risolta dal chiamante: setting persistente → env LOCUS_INGEST_KEY.
 
     for chunk in pending.chunks(CHUNK) {
         let payload: Vec<CasoIn> = chunk.iter().map(|(_, c)| c.clone()).collect();

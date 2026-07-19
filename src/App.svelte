@@ -2,14 +2,16 @@
   import CrawlPanel from "./lib/CrawlPanel.svelte";
   import BrowsePanel from "./lib/BrowsePanel.svelte";
   import PublishPanel from "./lib/PublishPanel.svelte";
+  import SettingsPanel from "./lib/SettingsPanel.svelte";
 
-  type Tab = "crawl" | "browse" | "publish";
+  type Tab = "crawl" | "browse" | "publish" | "config";
   let tab = $state<Tab>("crawl");
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "crawl", label: "Crawl" },
     { id: "browse", label: "Sfoglia" },
     { id: "publish", label: "Pubblica" },
+    { id: "config", label: "Config" },
   ];
 </script>
 
@@ -33,8 +35,10 @@
     <CrawlPanel />
   {:else if tab === "browse"}
     <BrowsePanel />
-  {:else}
+  {:else if tab === "publish"}
     <PublishPanel />
+  {:else}
+    <SettingsPanel />
   {/if}
 </main>
 

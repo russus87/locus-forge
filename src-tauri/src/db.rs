@@ -42,6 +42,11 @@ CREATE TABLE IF NOT EXISTS persona (
     wikipedia_url TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_persona_caso ON persona(caso_id);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 "#;
 
 pub fn sha256_hex(s: &str) -> String {
@@ -66,6 +71,30 @@ impl Db {
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// Valore di configurazione persistente (tabella `settings`), se presente.
+    pub fn get_setting(&self, key: &str) -> anyhow::Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let v: Option<String> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(v)
+    }
+
+    /// Salva (o aggiorna) un valore di configurazione persistente.
+    pub fn set_setting(&self, key: &str, value: &str) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     /// Hash del payload già salvato per (source, source_id), se presente.

@@ -7,6 +7,7 @@ mod ratelimit;
 mod sources;
 mod state;
 
+use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
 
 use error::{AppError, AppResult};
@@ -14,9 +15,35 @@ use model::{CasoRow, DbStats, SourceInfo};
 use sources::wikidata::WikidataSource;
 use state::{AppState, CrawlStatus, PublishStatus};
 
-/// URL del backend Locus Criminis (override con env `LOCUS_BACKEND_URL`).
-fn backend_url() -> String {
-    std::env::var("LOCUS_BACKEND_URL").unwrap_or_else(|_| "http://localhost:8790".to_string())
+const DEFAULT_BACKEND: &str = "http://localhost:8790";
+const KEY_BACKEND: &str = "backend_url";
+const KEY_INGEST: &str = "ingest_key";
+
+/// Configurazione modificabile dalla UI (pagina Config). Persistita nel DB.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Settings {
+    pub backend_url: String,
+    pub ingest_key: String,
+}
+
+/// Backend attivo: setting persistente → env `LOCUS_BACKEND_URL` → default localhost.
+fn resolve_backend_url(state: &AppState) -> String {
+    if let Ok(Some(v)) = state.db.get_setting(KEY_BACKEND) {
+        if !v.trim().is_empty() {
+            return v;
+        }
+    }
+    std::env::var("LOCUS_BACKEND_URL").unwrap_or_else(|_| DEFAULT_BACKEND.to_string())
+}
+
+/// Chiave di ingest: setting persistente → env `LOCUS_INGEST_KEY` → nessuna.
+fn resolve_ingest_key(state: &AppState) -> Option<String> {
+    if let Ok(Some(v)) = state.db.get_setting(KEY_INGEST) {
+        if !v.trim().is_empty() {
+            return Some(v);
+        }
+    }
+    std::env::var("LOCUS_INGEST_KEY").ok().filter(|k| !k.is_empty())
 }
 
 fn emit_crawl(app: &tauri::AppHandle) {
@@ -37,8 +64,23 @@ fn list_sources() -> Vec<SourceInfo> {
 }
 
 #[tauri::command]
-fn backend_target() -> String {
-    backend_url()
+fn backend_target(state: State<AppState>) -> String {
+    resolve_backend_url(&state)
+}
+
+#[tauri::command]
+fn get_settings(state: State<AppState>) -> AppResult<Settings> {
+    Ok(Settings {
+        backend_url: resolve_backend_url(&state),
+        ingest_key: resolve_ingest_key(&state).unwrap_or_default(),
+    })
+}
+
+#[tauri::command]
+fn save_settings(state: State<AppState>, settings: Settings) -> AppResult<()> {
+    state.db.set_setting(KEY_BACKEND, settings.backend_url.trim())?;
+    state.db.set_setting(KEY_INGEST, settings.ingest_key.trim())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -173,12 +215,15 @@ async fn publish_batch(app: tauri::AppHandle) -> AppResult<()> {
     }
     emit_publish(&app);
 
+    // Risolvo destinazione e chiave PRIMA dello spawn (i valori vengono spostati nel task).
+    let backend = resolve_backend_url(app.state::<AppState>().inner());
+    let ingest_key = resolve_ingest_key(app.state::<AppState>().inner());
+
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
-        let backend = backend_url();
         let state = app2.state::<AppState>();
         let cb_app = app2.clone();
-        publish::publish_all(state.inner(), &backend, move |s| {
+        publish::publish_all(state.inner(), &backend, ingest_key, move |s| {
             cb_app.state::<AppState>().set_publish(s.clone());
             let _ = cb_app.emit("publish-progress", s.clone());
         })
@@ -214,6 +259,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_sources,
             backend_target,
+            get_settings,
+            save_settings,
             crawl_status,
             publish_status,
             stop_task,
