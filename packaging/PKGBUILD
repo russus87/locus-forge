@@ -1,0 +1,24 @@
+# Maintainer: russus <russus2@gmail.com>
+# Prebuilt PKGBUILD: assembles an Arch package from artifacts already produced
+# by the CI build step (no compilation happens here).
+pkgname=locus-forge
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="Crawler e curation tool per il database di Locus Criminis"
+arch=('x86_64')
+url="https://github.com/russus87/locus-forge"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3')
+options=('!strip' '!debug')
+
+package() {
+  install -Dm755 "$startdir/locus-forge" "$pkgdir/usr/bin/locus-forge"
+  install -Dm644 "$startdir/locus-forge.desktop" \
+    "$pkgdir/usr/share/applications/locus-forge.desktop"
+  install -Dm644 "$startdir/icon-128.png" \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/locus-forge.png"
+  install -Dm644 "$startdir/icon-256.png" \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/locus-forge.png"
+  install -Dm644 "$startdir/icon-512.png" \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/locus-forge.png"
+}

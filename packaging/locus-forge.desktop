@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Locus Forge
+Comment=Crawler e curation tool per Locus Criminis
+Exec=locus-forge
+Icon=locus-forge
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true
+Keywords=locus;criminis;crawler;curation;wikipedia;wikidata;

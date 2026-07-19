@@ -1,84 +1,74 @@
-name: build-forge
+name: build
 
-# Compila Locus Forge (Tauri v2) su Linux, Windows e macOS (Intel + Apple Silicon).
-# - push su main / workflow_dispatch → build + artefatti scaricabili dalla run.
-# - push di un tag v* → crea una GitHub Release (draft) con gli installer allegati.
-
-on:
+"on":
   push:
-    branches: [main]
-    tags: ['v*']
+    tags:
+      - "v*"
   workflow_dispatch:
 
-jobs:
-  build:
-    permissions:
-      contents: write        # serve a tauri-action per creare la release sui tag
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-            name: macos-arm64
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-            name: macos-x64
-          - platform: ubuntu-22.04
-            args: ''
-            name: linux
-          - platform: windows-latest
-            args: ''
-            name: windows
-    runs-on: ${{ matrix.platform }}
+permissions:
+  contents: write
 
+jobs:
+  # ---------------------------------------------------------------------------
+  # Arch Linux — produces locus-forge-<ver>-1-x86_64.pkg.tar.zst
+  # (l'artefatto che russus-launcher installa)
+  # ---------------------------------------------------------------------------
+  arch:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
     steps:
+      - name: Install toolchain & deps
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git rust nodejs npm \
+            webkit2gtk-4.1 gtk3 libappindicator-gtk3 \
+            patchelf openssl sudo curl tar
+
       - uses: actions/checkout@v4
 
-      - name: Install Linux system deps
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Resolve version
+        id: ver
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libxdo-dev \
-            build-essential curl wget file libssl-dev
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="$(node -p "require('./package.json').version")"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v4
+      - name: Build frontend + binary
+        run: |
+          npm ci
+          npx tauri build --no-bundle
+
+      - name: Stage package artifacts
+        run: |
+          mkdir -p pkgstage
+          cp src-tauri/target/release/locus-forge pkgstage/locus-forge
+          cp packaging/locus-forge.desktop pkgstage/locus-forge.desktop
+          cp packaging/PKGBUILD pkgstage/PKGBUILD
+          cp src-tauri/icons/128x128.png      pkgstage/icon-128.png
+          cp src-tauri/icons/128x128@2x.png   pkgstage/icon-256.png
+          cp src-tauri/icons/icon.png         pkgstage/icon-512.png
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.ver.outputs.version }}/" pkgstage/PKGBUILD
+
+      - name: makepkg (.pkg.tar.zst)
+        run: |
+          useradd -m builder
+          chown -R builder pkgstage
+          cd pkgstage
+          sudo -u builder makepkg -f --noconfirm
+          ls -1 *.pkg.tar.zst
+
+      - uses: actions/upload-artifact@v4
         with:
-          node-version: 20
+          name: arch-package
+          path: pkgstage/*.pkg.tar.zst
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: './src-tauri -> target'
-
-      - name: Install frontend deps
-        run: npm install
-
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          # tagName vuoto = solo build (nessuna release); valorizzato solo sui tag v*
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && 'Locus Forge __VERSION__' || '' }}
-          releaseDraft: true
-          releaseBody: 'Installer generati automaticamente dalla CI.'
-          args: ${{ matrix.args }}
-
-      - name: Upload build artifacts (build non-release)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: locus-forge-${{ matrix.name }}
-          path: |
-            src-tauri/target/release/bundle/**/*
-            src-tauri/target/*/release/bundle/**/*
-          if-no-files-found: ignore
+          files: pkgstage/*.pkg.tar.zst
