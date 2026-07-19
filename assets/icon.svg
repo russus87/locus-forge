@@ -1,0 +1,30 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#caa24a"/>
+      <stop offset="1" stop-color="#8a6a1f"/>
+    </linearGradient>
+    <linearGradient id="col" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f0e4c4"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- classical pediment / museum facade, standing for "art history archive" -->
+  <g transform="translate(256 172)">
+    <path d="M-140 0 L0 -78 L140 0 Z" fill="url(#col)"/>
+    <rect x="-152" y="0" width="304" height="18" rx="4" fill="url(#col)"/>
+  </g>
+  <!-- columns -->
+  <g fill="url(#col)">
+    <rect x="112" y="200" width="26" height="150" rx="4"/>
+    <rect x="176" y="200" width="26" height="150" rx="4"/>
+    <rect x="243" y="200" width="26" height="150" rx="4"/>
+    <rect x="310" y="200" width="26" height="150" rx="4"/>
+    <rect x="374" y="200" width="26" height="150" rx="4"/>
+  </g>
+  <!-- base / plinth -->
+  <rect x="96" y="358" width="320" height="20" rx="4" fill="url(#col)"/>
+  <!-- forge spark / data node accent -->
+  <circle cx="256" cy="279" r="20" fill="#8a6a1f" stroke="#ffffff" stroke-width="8"/>
+</svg>
